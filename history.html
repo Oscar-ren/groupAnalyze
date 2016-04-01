@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>聊天记录</title>
+</head>
+<body>
+    <pre class="content"></pre>
+    <script src="jquery-1.11.1.js"></script>
+    <script src="papaparse.min.js"></script>
+    <script>
+        var padID = decodeURI(location.search.split('&')[0].split('=')[1]);
+        var courseInfo = decodeURI(location.search.split('&')[1].split('=')[1]);
+        var baseUrl = "http://222.198.126.242:8080/api/1.2.10/";
+        var	apikey = "8f2f95ba0babc4a151d970b8acfbc00869cf3dce5b5ca6893343303d86049cd8";
+        $.ajax({
+            type: 'get',
+            url: baseUrl + 'getChatHistory?padID=' + padID + '&apikey=' + apikey,
+            dataType: 'jsonp',
+            jsonp: 'jsonp'
+        }).then(function(result) {
+
+            var str = '';
+
+            var dataSets = {
+                fields: ["姓名", "时间", "聊天内容"],
+                data: []
+            };
+
+            var message = result.data.messages;
+            for(var i = 0; i < message.length; i++) {
+                var date = new Date(message[i].time);
+                var time = date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds();
+
+                var arr = [];
+                arr.push(message[i].userName, time, message[i].text);
+                dataSets.data.push(arr);
+
+
+                str += message[i].userName + '  ' + time +  ':  ' + message[i].text;
+                str += '\r\n';
+            }
+
+            var csv = Papa.unparse(dataSets, {
+                quotes: false,
+                delimiter: ",",
+                newline: "\r\n"
+            });
+
+            $.ajax({
+                url: '/outputCsv',
+                data: {
+                    name: courseInfo + padID.split('$')[1].split('-')[1] + '聊天记录',
+                    chat: csv
+                },
+                type: 'post'
+            }).then(function(result) {
+               console.log(result);
+                alert('已输出到根目录csv文件夹下');
+            }, function(err) {
+                console.log(err);
+            });
+
+            $('.content').html(str);
+
+        }, function(err) {
+            console.log(err);
+        })
+    </script>
+</body>
+</html>

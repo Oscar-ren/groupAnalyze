@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>小组作业专注度表</title>
+    <style>
+        #distance {
+            width: 50px;;
+        }
+    </style>
+</head>
+<body>
+<div class="selected">
+    <h4>请选择作业</h4>
+    <select class="year"></select>
+    <select class="courses"></select>
+    <select class="missions"></select>
+</div>
+<div class="groupType">
+    <h4>分类别统计</h4>
+    <span>S1类型的小组</span>
+    <div class="S1">
+    </div>
+    <span>S2类型的小组</span>
+    <div class="S2">
+    </div>
+
+</div>
+<div class="params" style="margin-top: 40px;">
+    <h4>选择要统计的时间范围</h4>
+    <div class="analyseData">
+        <span>开始时间：</span>
+        <input type="date" id="date" value="2016-03-16"/>
+        <span>-</span>
+        <input type="time" id="time" value="19:40"/>
+        <span>结束时间：</span>
+        <input type="time" id="finalTime" value="21:10"/>
+        <span>间隔段：</span>
+        <input type="number" id="distance" value="60"/>
+        <span>s</span>
+        <!--<span>窗口时间：</span>-->
+        <!--<input type="number" id="range" value="20"/>-->
+        <button class="timeData" disabled="disabled" >提交</button>
+    </div>
+
+</div>
+
+<div id="display" style="width: 70%; height: 350px; margin-top: 50px"></div>
+<div id="showChatFocus" style="width: 70%; height: 350px; margin-top: 10px"></div>
+<div>
+    <table id="history" border="1px"></table>
+</div>
+
+
+<script src="jquery-1.11.1.js"></script>
+<script src='handlebars-v4.0.5.js'></script>
+<script src="processData.js"></script>
+<script src="echarts.min.js"></script>
+<script src="papaparse.min.js"></script>
+
+<!--模板内容-->
+<script id="yearList" type="text/x-handlebars-template">
+    <option value="预设">请选择学年</option>
+    {{#each result}}
+    <option value="{{this}}">{{this}}</option>
+    {{/each}}
+</script>
+
+<script id="commonList" type="text/x-handlebars-template">
+    <option value="课程">请选择</option>
+    {{#each result}}
+    <option value="{{name}}" data-id="{{id}}">{{name}}</option>
+    {{/each}}
+</script>
+
+<script id="groupS1List" type="text/x-handlebars-template">
+    {{#each result}}
+    <label><input type="checkbox" name="S1" value="{{groupNum}}"/>{{groupName}}</label>
+    {{/each}}
+</script>
+
+<script id="groupS2List" type="text/x-handlebars-template">
+    {{#each result}}
+    <label><input type="checkbox" name="S2" value="{{groupNum}}"/>{{groupName}}</label>
+    {{/each}}
+</script>
+
+<script id="historyInfo" type="text/x-handlebars-template">
+    <thead>
+        <tr>
+            <th>#</th>
+            {{#each groupData}}
+            <th><a href="/history?padID={{padID}}&courseInfo={{courseInfo}}" target="_blank" >{{name}}</a></th>
+            {{/each}}
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <th>小组总人数</th>
+            {{#each groupData}}
+            <td>{{groupAuthorCount}}</td>
+            {{/each}}
+        </tr>
+        <tr>
+            <th>聊天总人数</th>
+            {{#each groupData}}
+            <td>{{chatPeople}}</td>
+            {{/each}}
+        </tr>
+        <tr>
+            <th>聊天总次数</th>
+            {{#each groupData}}
+            <td>{{chatNum}}</td>
+            {{/each}}
+        </tr>
+        <tr>
+            <th>聊天总字数</th>
+            {{#each groupData}}
+            <td>{{chatWords}}</td>
+            {{/each}}
+        </tr>
+    </tbody>
+</script>
+
+<script>
+
+    var historyData = {
+        groupData: []
+    };
+    var padSet = [], S1MissionData = [], S2MissionData = [], S1ChatData = [], S2ChatData = [];
+    // 用于查询历史聊天数据，记录已成功查询的小组数
+    var readyQuest = [];
+
+    // 基于准备好的dom，初始化echarts实例
+    var myChart = echarts.init(document.getElementById('display'));
+
+    var showChatFocus = echarts.init(document.getElementById('showChatFocus'));
+
+    // 指定图表的配置项和数据
+    var option = {
+        title: {
+            text: '各小组写作专注度折线图',
+            x:'center',
+            top: '-5'
+        },
+        //鼠标经过显示模板
+        tooltip: {
+            trigger: 'axis',
+            formatter: function (params) {
+                var str = '数据：';
+
+                for(var i = 0; i < params.length; i++) {
+                    var param = params[i];
+
+                    if(!param.name) {
+//                        str += '<br \>' + param.seriesName + '此时没有数据';
+                        continue;
+                    }else {
+                        var date = new Date(param.name);
+                        str += '<br \>' + param.seriesName + '在' + date.getHours() + ':' + (date.getMinutes() + 1) + ':' + date.getSeconds() + '时的专注度为' + param.value[1]
+                    }
+                }
+
+                return str;
+            }
+        },
+        legend: {
+            data: [{
+                name: 'Mixed',
+                icon: 'image://dotted.jpg'
+            }, {
+                name: 'System',
+                icon: 'image://line.jpg'
+            }],
+            textStyle: {
+              fontSize: 14
+            },
+            top: 32
+        },
+        grid: {
+            left: '5%',
+            right: '4%',
+            bottom: '10%',
+            containLabel: true
+        },
+        //功能条
+        toolbox: {
+            show: true,
+            feature: {
+                dataZoom: {},
+                dataView: {readOnly: false},
+                restore: {},
+                saveAsImage: {}
+            }
+        },
+        //缩放条
+        dataZoom: [{
+            type: 'inside',
+            start: 0,
+            end: 100
+        }, {
+            start: 0,
+            end: 100
+        }],
+        xAxis: {
+            type: 'time'
+        },
+        yAxis: {
+            type: 'value',
+            name: 'Enagement Intensity'
+        },
+        series: [
+            {
+                name: 'Mixed',
+                type: 'line',
+                smooth: true,
+                lineStyle: {
+                  normal: {
+                      color: '#f00',
+                      type: 'dashed'
+                  }
+                },
+                sampling: 'average',
+                data: S1MissionData
+            },
+            {
+                name: 'System',
+                type: 'line',
+                smooth: true,
+                sampling: 'average',
+                data: S2MissionData
+            }
+        ]
+    };
+
+    var chatOption = {
+        title: {
+            text: '各小组聊天次数折线图',
+            x:'center',
+            top: '-5'
+        },
+        //鼠标经过显示模板
+        tooltip: {
+            trigger: 'axis',
+            formatter: function (params) {
+                var str = '数据：';
+                for(var i = 0; i < params.length; i++) {
+                    var param = params[i];
+                    if(!param.name) {
+                        continue;
+                    }else {
+                        var date = new Date(param.name);
+                        str += '<br \>' + param.seriesName + '在' + date.getHours() + ':' + (date.getMinutes() + 1) + ':' + date.getSeconds() + '时的聊天次数为' + param.value[1]
+                    }
+                }
+                return str;
+            }
+        },
+        legend: {
+            data: ['Mixed', 'System'],
+            top: 32,
+            textStyle: {
+                fontSize: 14
+            }
+        },
+        grid: {
+            left: '5%',
+            right: '4%',
+            bottom: '10%',
+            containLabel: true
+        },
+        //功能条
+        toolbox: {
+            show: true,
+            feature: {
+                dataZoom: {},
+                dataView: {readOnly: false},
+                restore: {},
+                saveAsImage: {}
+            }
+        },
+        //缩放条
+        dataZoom: [{
+            type: 'inside',
+            start: 0,
+            end: 100
+        }, {
+            start: 0,
+            end: 100
+        }],
+        xAxis: {
+            type: 'time'
+        },
+        yAxis: {
+            type: 'value',
+            name: 'Num. of Chat Msg.'
+        },
+        series: [
+            {
+                name: 'Mixed',
+                type: 'line',
+                smooth: true,
+                lineStyle: {
+                    normal: {
+                        width: 3,
+                        type: 'dashed'
+                    }
+                },
+                sampling: 'average',
+                data: S1ChatData
+            },
+            {
+                name: 'System',
+                type: 'line',
+                smooth: true,
+                lineStyle: {
+                    normal: {
+                        width: 3
+                    }
+                },
+                sampling: 'average',
+                data: S2ChatData
+            }
+        ]
+    };
+
+
+    //TODO 回调地狱
+    //页面加载完毕请求年份、课程、作业信息
+
+    $(function() {
+
+        //拿到学年信息
+        $.ajax({
+            type: 'get',
+            url: '/year',
+            dataType: 'JSON'
+        }).then(function(data) {
+
+            var yearTemplate = Handlebars.compile($('#yearList').html());
+            $('.year').html(yearTemplate(data));
+
+            $('.year').on('change', function() {
+
+                //拿到课程信息
+                $.ajax({
+                    type: 'post',
+                    data: {year: $(this).val()},
+                    url: '/courses',
+                    dataType: 'JSON'
+                }).then(function(data) {
+
+                    var coursesTemplate = Handlebars.compile($('#commonList').html());
+                    $('.courses').html(coursesTemplate(data));
+
+                    $('.courses').on('change', function() {
+
+                        var courseId = $('.courses option:selected').data('id');
+
+                        //获取作业信息
+                        $.ajax({
+                            url: '/missions',
+                            type: "post",
+                            data: {course: courseId},
+                            dataType: 'JSON'
+                        }).then(function(data) {
+                            var missionsTemplate = Handlebars.compile($('#commonList').html());
+                            $('.missions').html(missionsTemplate(data));
+
+                            $('.missions').on('change', function() {
+
+                                var missionId = $('.missions option:selected').data('id');
+
+                                $.ajax({
+                                    url: '/pads',
+                                    type: 'post',
+                                    data: {mission: missionId}
+                                }).then(function(data) {
+
+                                    var result = [];
+                                    historyData.groupData.length = 0;
+                                    padSet = data.padSet;
+
+                                    for(var i = 0, padLen = padSet.length; i < padLen; i++) {
+                                        var groupName = padSet[i].split('$')[1].split('-')[1];
+                                        var obj = {};
+                                        obj.groupName = groupName;
+                                        obj.groupNum = groupName.slice(2);
+
+                                        //存储小组名字
+                                        historyData.groupData.push({
+                                            padID: padSet[i],
+                                            courseInfo: $('.courses option:selected').val() + $('.missions option:selected').val(),
+                                            name: obj.groupName
+                                        });
+                                        result.push(obj);
+                                    }
+
+                                    //得到小组信息，划分S1、S2类别
+                                    var groupS1Template = Handlebars.compile($('#groupS1List').html());
+                                    $('.S1').html(groupS1Template({result: result}));
+                                    var groupS2Template = Handlebars.compile($('#groupS2List').html());
+                                    $('.S2').html(groupS2Template({result: result}));
+
+                                    //可以提交统计时间范围数据了
+                                    $('.timeData').prop('disabled', false);
+
+
+                                }, function(err) {
+                                    console.log(err);
+                                });
+
+                            })
+
+                        }, function(err) {
+                            console.log('getMissions is error and msg is ' + err);
+                        });
+                    })
+
+
+                }, function(err) {
+                    console.log('getCourses is error and msg is ' + err);
+                });
+
+            });
+
+        }, function(err) {
+            console.log('getYear is error and the msg is ' + err);
+        })
+    });
+
+
+    $('.timeData').on('click', function() {
+
+        //表格数据清空
+        S1MissionData.length = 0;
+        S2MissionData.length = 0;
+        S1ChatData.length = 0;
+        S2ChatData.length = 0;
+        readyQuest.length = 0;
+        validateTime();
+    });
+
+    //验证表单数据并根据表单数据查询专注度所需信息
+    function validateTime() {
+
+        if(!$('#date').val() || !$('#time').val() || !$('#distance').val()) {
+            throw new Error('数据不合法，请检查是否填写数据');
+        }else {
+            var str = $('#date').val() + ' ' + $('#time').val();
+            var beginTime = (new Date(str)).getTime();
+            var finalTime = (new Date($('#date').val() + ' ' + $('#finalTime').val())).getTime();
+
+            //S1 S2
+            var S1groupSet = [], S2groupSet = [];
+
+            $('input[name="S1"]:checked').each(function(index, e) {
+               S1groupSet.push($(this).val());
+            });
+            $('input[name="S2"]:checked').each(function(index, e) {
+                S2groupSet.push($(this).val());
+            });
+
+            var S1OriginData = [], S2OriginData = [];
+
+            for(var padIndex = 0; padIndex < padSet.length; padIndex++) {
+                queryChatHistory(padSet[padIndex], beginTime, finalTime, $('#distance').val(), S1groupSet, S2groupSet, S1OriginData, S2OriginData);
+            }
+
+            queryVersionsData(padSet, beginTime, finalTime, $('#distance').val(), S1groupSet, S2groupSet);
+        }
+    }
+</script>
+</body>
+</html>
