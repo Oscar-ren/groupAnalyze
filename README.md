@@ -1,5 +1,6 @@
 # groupAnalyze
-运行
+
+需要在学校里运行
 
 ```nodejs
 > node app.js
